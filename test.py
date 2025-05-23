@@ -35,7 +35,7 @@ class ScoreboardApp:
         self.trophy_icon_image = None 
         
         try:
-            # print(f"DEBUG: Loading trophy from: {os.path.abspath(TROPHY_ICON_PATH)}")
+            # print(f"DEBUG: Loading trophy from: {os.path.abspath()}")
             self.trophy_icon_image = tk.PhotoImage(file=TROPHY_ICON_PATH)
             # print("DEBUG: Trophy icon loaded successfully.")
         except tk.TclError as e:
@@ -169,7 +169,7 @@ class ScoreboardApp:
         if rank_position_str == "1st" and self.trophy_icon_image: 
             trophy_label = tk.Label(parent_frame, image=self.trophy_icon_image, bg=current_team_color)
             trophy_label.image = self.trophy_icon_image 
-            trophy_label.place(x=5, y=5) 
+            trophy_label.place(x=10, y=10) 
             trophy_label.bind("<Button-1>", lambda e, tn=team_name, tp=team_points, rps=rank_position_str: self.show_fullscreen_quadrant(tn, tp, rps))
 
         display_team_name = team_name.capitalize()
