@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 import queue 
 import os 
+import random # For initial random direction
 
 # --- Configuration ---
 UDP_IP = "0.0.0.0"
@@ -18,14 +19,16 @@ TEMP_FULLSCREEN_DURATION_MS = 10000
 QUADRANT_SEPARATOR_THICKNESS = 1 
 
 # --- Image Paths ---
-IMAGE_BASE_PATH = "/home/ssa/House-Point-System/" # Define base path for images
+IMAGE_BASE_PATH = "/home/ssa/House-Point-System/" 
 TROPHY_ICON_PATH = os.path.join(IMAGE_BASE_PATH, "trophy.png")
+LOGO_FOR_SCREENSAVER_PATH = os.path.join(IMAGE_BASE_PATH, "logo.png") # Path for the bouncing logo
 
 # --- Burn-in Prevention Configuration ---
-BURN_IN_MESSAGE = "Scoreboard will be back up soon, preventing screen burn-in."
+# BURN_IN_MESSAGE REMOVED
 BURN_IN_SCREEN_DURATION_MS = 2 * 60 * 1000  # 2 minutes
-BURN_IN_ANIMATION_STEP = 5  # Pixels to move the message label each step
-BURN_IN_ANIMATION_DELAY_MS = 30 # Milliseconds between animation steps
+BURN_IN_LOGO_DX = 3  # Pixels to move logo horizontally each step
+BURN_IN_LOGO_DY = 2  # Pixels to move logo vertically each step
+BURN_IN_ANIMATION_DELAY_MS = 25 # Milliseconds between animation steps (faster for smoother bounce)
 
 class ScoreboardApp:
     def __init__(self, root):
@@ -38,35 +41,42 @@ class ScoreboardApp:
         self.sorted_teams_cache = []
         self.last_update_time = "Never"
 
-        # --- Updated TEAM COLORS ---
         self.team_colors = { 
-            "castile": "#24593f", 
-            "capet":   "#2c3f8b",
-            "essex":   "#9a4996", 
-            "milan":   "#c13734" 
+            "castile": "#24593f", "capet":   "#2c3f8b",
+            "essex":   "#9a4996", "milan":   "#c13734" 
         }
         self.trophy_icon_image = None 
+        self.screensaver_logo_image = None # For the PhotoImage of the bouncing logo
         
         # For burn-in prevention screen
         self.burn_in_screen_active = False
         self.burn_in_window = None
-        self.burn_in_message_label = None
+        self.burn_in_logo_label = None # Will display the logo
         self.burn_in_animation_id = None
-        self.burn_in_text_x_pos = 0
-        self.burn_in_text_direction = 1 # 1 for right, -1 for left
+        self.burn_in_logo_x = 0
+        self.burn_in_logo_y = 0
+        self.burn_in_logo_dx_current = BURN_IN_LOGO_DX
+        self.burn_in_logo_dy_current = BURN_IN_LOGO_DY
+
 
         try:
-            # print(f"DEBUG: Loading trophy from: {TROPHY_ICON_PATH}")
             if not os.path.exists(TROPHY_ICON_PATH):
                 print(f"WARNING: Trophy icon file not found at {TROPHY_ICON_PATH}")
             else:
                 self.trophy_icon_image = tk.PhotoImage(file=TROPHY_ICON_PATH)
-        except tk.TclError as e:
-            print(f"WARNING: TKINTER TCL ERROR loading trophy '{TROPHY_ICON_PATH}': {e}") 
+        except Exception as e:
+            print(f"WARNING: ERROR loading trophy icon: {e}")
             self.trophy_icon_image = None
-        except Exception as e: # Catch other potential file errors
-            print(f"WARNING: UNEXPECTED ERROR loading trophy icon: {type(e).__name__} - {e}")
-            self.trophy_icon_image = None
+        
+        try:
+            if not os.path.exists(LOGO_FOR_SCREENSAVER_PATH):
+                print(f"WARNING: Screensaver logo file not found at {LOGO_FOR_SCREENSAVER_PATH}")
+            else:
+                self.screensaver_logo_image = tk.PhotoImage(file=LOGO_FOR_SCREENSAVER_PATH)
+        except Exception as e:
+            print(f"WARNING: ERROR loading screensaver logo: {e}")
+            self.screensaver_logo_image = None
+
 
         self.udp_queue = queue.Queue()
         self.udp_stop_event = threading.Event()
@@ -81,39 +91,35 @@ class ScoreboardApp:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.bind('<Escape>', lambda e: self.on_closing())
         
-        # Start checking for burn-in screen schedule
-        self.check_burn_in_schedule_id = self.root.after(1000, self.check_burn_in_schedule) # Check every second initially
+        self.check_burn_in_schedule_id = self.root.after(1000, self.check_burn_in_schedule)
 
 
     def reassert_fullscreen_root(self, event=None):
         if self.root.attributes('-fullscreen'):
-            self.root.attributes('-fullscreen', True)
-            self.root.lift()
+            self.root.attributes('-fullscreen', True); self.root.lift()
 
     def reassert_fullscreen_fs(self, event=None):
         if hasattr(self, 'fs_window') and self.fs_window.winfo_exists():
             if self.fs_window.attributes('-fullscreen'):
-                self.fs_window.attributes('-fullscreen', True)
-                self.fs_window.lift()
+                self.fs_window.attributes('-fullscreen', True); self.fs_window.lift()
 
     # --- Burn-in Prevention Methods ---
     def check_burn_in_schedule(self):
         now = datetime.now()
-        # print(f"DEBUG: Checking burn-in schedule. Current minute: {now.minute}") # For debugging
-        if now.minute == 20 and not self.burn_in_screen_active:
+        if now.minute == 20 and not self.burn_in_screen_active: # Trigger at HH:20
             self.activate_burn_in_screen()
         
-        # Reschedule to check again in (roughly) a minute
-        # Calculate ms until next minute starts to be more precise
         ms_until_next_minute = (60 - now.second) * 1000 - now.microsecond // 1000
-        if ms_until_next_minute < 500: # If very close to next minute, wait a full minute
-            ms_until_next_minute += 60000
-        
+        if ms_until_next_minute < 500: ms_until_next_minute += 60000
         self.check_burn_in_schedule_id = self.root.after(ms_until_next_minute, self.check_burn_in_schedule)
 
     def activate_burn_in_screen(self):
         if self.burn_in_screen_active: return
-        print("INFO: Activating burn-in prevention screen.")
+        if not self.screensaver_logo_image: # Don't activate if logo isn't loaded
+            print("WARNING: Screensaver logo not loaded, cannot activate burn-in screen.")
+            return
+            
+        print("INFO: Activating bouncing logo burn-in prevention.")
         self.burn_in_screen_active = True
         
         self.burn_in_window = tk.Toplevel(self.root)
@@ -121,51 +127,63 @@ class ScoreboardApp:
         self.burn_in_window.configure(bg="black", cursor="none")
         self.burn_in_window.lift()
 
-        self.burn_in_message_label = tk.Label(
+        self.burn_in_logo_label = tk.Label(
             self.burn_in_window, 
-            text=BURN_IN_MESSAGE,
-            font=("Arial", 30, "bold"),
-            fg="white",
-            bg="black"
+            image=self.screensaver_logo_image,
+            bg="black" # Match window background for seamless look
         )
-        # Initial placement (will be animated) - start off screen left or centered
-        self.burn_in_window.update_idletasks() # Ensure window dimensions are known
-        label_width = self.burn_in_message_label.winfo_reqwidth()
-        self.burn_in_text_x_pos = -label_width # Start off-screen left
-        # Or to start centered and move:
-        # self.burn_in_text_x_pos = (self.burn_in_window.winfo_width() - label_width) / 2
-        self.burn_in_message_label.place(x=self.burn_in_text_x_pos, rely=0.5, anchor="w") # Anchor west
-        self.burn_in_text_direction = 1 # Start moving right
+        self.burn_in_logo_label.image = self.screensaver_logo_image # Keep reference
 
-        self.animate_burn_in_text()
+        self.burn_in_window.update_idletasks() # Ensure window dimensions are known
+        # Initial position (e.g., center or random within bounds)
+        self.burn_in_logo_x = random.randint(0, self.burn_in_window.winfo_width() - self.screensaver_logo_image.width())
+        self.burn_in_logo_y = random.randint(0, self.burn_in_window.winfo_height() - self.screensaver_logo_image.height())
+        
+        # Initial random direction
+        self.burn_in_logo_dx_current = random.choice([-BURN_IN_LOGO_DX, BURN_IN_LOGO_DX])
+        self.burn_in_logo_dy_current = random.choice([-BURN_IN_LOGO_DY, BURN_IN_LOGO_DY])
+
+        self.burn_in_logo_label.place(x=self.burn_in_logo_x, y=self.burn_in_logo_y)
+        
+        self.animate_bouncing_logo()
 
         self.burn_in_window.bind("<Button-1>", self.deactivate_burn_in_screen_event)
         self.burn_in_window.bind("<Key>", self.deactivate_burn_in_screen_event)
         self.burn_in_window.focus_set()
 
-        # Automatically deactivate after a duration
         self.root.after(BURN_IN_SCREEN_DURATION_MS, self.deactivate_burn_in_screen)
 
-    def animate_burn_in_text(self):
-        if not self.burn_in_screen_active or not self.burn_in_window.winfo_exists():
+    def animate_bouncing_logo(self):
+        if not self.burn_in_screen_active or not self.burn_in_window.winfo_exists() or not self.burn_in_logo_label:
             return
 
         window_width = self.burn_in_window.winfo_width()
-        label_width = self.burn_in_message_label.winfo_reqwidth()
+        window_height = self.burn_in_window.winfo_height()
+        logo_width = self.screensaver_logo_image.width()
+        logo_height = self.screensaver_logo_image.height()
 
-        self.burn_in_text_x_pos += (BURN_IN_ANIMATION_STEP * self.burn_in_text_direction)
+        # Update position
+        self.burn_in_logo_x += self.burn_in_logo_dx_current
+        self.burn_in_logo_y += self.burn_in_logo_dy_current
         
-        # Reverse direction if it hits the edges
-        if self.burn_in_text_x_pos + label_width > window_width and self.burn_in_text_direction == 1:
-            self.burn_in_text_x_pos = window_width - label_width # Pin to edge
-            self.burn_in_text_direction = -1
-        elif self.burn_in_text_x_pos < 0 and self.burn_in_text_direction == -1:
-            self.burn_in_text_x_pos = 0 # Pin to edge
-            self.burn_in_text_direction = 1
+        # Bounce off edges
+        if self.burn_in_logo_x + logo_width > window_width:
+            self.burn_in_logo_x = window_width - logo_width
+            self.burn_in_logo_dx_current *= -1
+        elif self.burn_in_logo_x < 0:
+            self.burn_in_logo_x = 0
+            self.burn_in_logo_dx_current *= -1
+            
+        if self.burn_in_logo_y + logo_height > window_height:
+            self.burn_in_logo_y = window_height - logo_height
+            self.burn_in_logo_dy_current *= -1
+        elif self.burn_in_logo_y < 0:
+            self.burn_in_logo_y = 0
+            self.burn_in_logo_dy_current *= -1
         
-        self.burn_in_message_label.place_configure(x=self.burn_in_text_x_pos)
+        self.burn_in_logo_label.place_configure(x=self.burn_in_logo_x, y=self.burn_in_logo_y)
         
-        self.burn_in_animation_id = self.burn_in_window.after(BURN_IN_ANIMATION_DELAY_MS, self.animate_burn_in_text)
+        self.burn_in_animation_id = self.burn_in_window.after(BURN_IN_ANIMATION_DELAY_MS, self.animate_bouncing_logo)
 
     def deactivate_burn_in_screen_event(self, event=None):
         self.deactivate_burn_in_screen()
@@ -181,19 +199,15 @@ class ScoreboardApp:
         if hasattr(self, 'burn_in_window') and self.burn_in_window.winfo_exists():
             self.burn_in_window.destroy()
             self.burn_in_window = None
-        self.burn_in_message_label = None
+        self.burn_in_logo_label = None # Clear reference
         self.burn_in_screen_active = False
-        # No need to record_activity here, as it's time-based, not inactivity-based
 
     def on_closing(self):
         print("Closing application...") 
         if hasattr(self, 'check_burn_in_schedule_id') and self.check_burn_in_schedule_id:
             self.root.after_cancel(self.check_burn_in_schedule_id)
             self.check_burn_in_schedule_id = None
-        # Deactivate burn-in screen if active, to prevent issues on close
-        if self.burn_in_screen_active:
-            self.deactivate_burn_in_screen()
-
+        if self.burn_in_screen_active: self.deactivate_burn_in_screen()
         self.udp_stop_event.set()
         if self.udp_thread.is_alive():
             try:
@@ -206,6 +220,7 @@ class ScoreboardApp:
         self.root.destroy()
 
     def setup_ui(self):
+        # ... (setup_ui remains the same)
         self.root.configure(bg="black") 
         self.quadrant_container = tk.Frame(self.root, bg="black") 
         self.quadrant_container.pack(fill=tk.BOTH, expand=True)
@@ -225,8 +240,9 @@ class ScoreboardApp:
         self.last_updated_label = tk.Label(self.root, textvariable=self.last_updated_var, bg="black", fg="white", font=("Arial", 12))
         self.last_updated_label.place(relx=0.5, rely=0.02, anchor="n")
         self.update_display()
-
+    
     def udp_listener(self):
+        # ... (udp_listener remains the same)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             sock.bind((UDP_IP, UDP_PORT))
@@ -248,6 +264,7 @@ class ScoreboardApp:
             sock.close()
     
     def process_udp_queue(self):
+        # ... (process_udp_queue remains the same)
         try:
             while not self.udp_queue.empty():
                 message = self.udp_queue.get_nowait()
@@ -264,7 +281,6 @@ class ScoreboardApp:
                             TEAM_NAMES_ORDERED_IN_PACKET[2]: int(parts[2]), 
                             TEAM_NAMES_ORDERED_IN_PACKET[3]: int(parts[3]) 
                         }
-                        # No record_activity here for burn-in, it's time-based
                         now = datetime.now(); hour_12 = int(now.strftime('%I')); self.last_update_time = f"{now.month}/{now.day}/{now.strftime('%y')} {hour_12}:{now.minute:02d} {now.strftime('%p')}"
                         self.last_updated_var.set(f"Last updated: {self.last_update_time}")
                         self.update_display()
@@ -276,6 +292,7 @@ class ScoreboardApp:
             self.root.after(UPDATE_INTERVAL_MS, self.process_udp_queue)
 
     def update_display(self):
+        # ... (update_display remains the same)
         self.sorted_teams_cache = sorted(self.team_points.items(), key=lambda item: item[1], reverse=True)
         rank_strings = ["1st", "2nd", "3rd", "4th"]
         for i, (team_name, points) in enumerate(self.sorted_teams_cache):
@@ -287,6 +304,7 @@ class ScoreboardApp:
         if self.last_updated_label: self.last_updated_label.lift() 
 
     def design_single_quadrant(self, parent_frame, team_name, team_points, rank_position_str):
+        # ... (design_single_quadrant remains the same)
         current_team_color = self.team_colors.get(team_name.lower(), "gray50")
         parent_frame.configure(bg=current_team_color) 
         font_team_name = ("Gill Sans MT", 60, "bold")
@@ -318,6 +336,7 @@ class ScoreboardApp:
             widget.bind("<Button-1>", lambda e, tn=team_name, tp=team_points, rps=rank_position_str: self.show_fullscreen_quadrant(tn, tp, rps))
 
     def apply_grab(self):
+        # ... (apply_grab remains the same)
         if hasattr(self, 'fs_window') and self.fs_window.winfo_exists():
             try:
                 self.fs_window.grab_set()
@@ -325,27 +344,16 @@ class ScoreboardApp:
                 print(f"WARNING: FS - Error applying grab: {e}") 
 
     def show_fullscreen_quadrant(self, team_name, team_points, rank_position_str):
-        if hasattr(self, 'fs_window') and self.fs_window.winfo_exists():
-            self.fs_window.destroy()
-
-        self.fs_window = tk.Toplevel(self.root)
-        self.fs_window.attributes('-fullscreen', True) 
-        self.fs_window.transient(self.root)      
-        self.fs_window.config(cursor="none")
-        current_team_color = self.team_colors.get(team_name.lower(), "gray20")
-        self.fs_window.configure(bg=current_team_color)
-
-        self.fs_window.bind("<FocusIn>", self.reassert_fullscreen_fs)
-        self.fs_window.bind("<Activate>", self.reassert_fullscreen_fs)
-
-        content_frame = tk.Frame(self.fs_window, bg=current_team_color)
-        content_frame.pack(fill=tk.BOTH, expand=True)
+        # ... (show_fullscreen_quadrant remains largely the same, using team emblem, delayed grab) ...
+        if hasattr(self, 'fs_window') and self.fs_window.winfo_exists(): self.fs_window.destroy()
+        self.fs_window = tk.Toplevel(self.root); self.fs_window.attributes('-fullscreen', True) 
+        self.fs_window.transient(self.root); self.fs_window.config(cursor="none")
+        current_team_color = self.team_colors.get(team_name.lower(), "gray20"); self.fs_window.configure(bg=current_team_color)
+        self.fs_window.bind("<FocusIn>", self.reassert_fullscreen_fs); self.fs_window.bind("<Activate>", self.reassert_fullscreen_fs)
+        content_frame = tk.Frame(self.fs_window, bg=current_team_color); content_frame.pack(fill=tk.BOTH, expand=True)
         info_block_frame = tk.Frame(content_frame, bg=current_team_color)
-
-        current_team_name_fs = team_name
-        current_team_points_fs = team_points
-        # ... [rest of variable setup and score difference calculations are the same] ...
-        current_team_rank_str_fs = rank_position_str
+        current_team_name_fs = team_name; current_team_points_fs = team_points; current_team_rank_str_fs = rank_position_str
+        # ... [score difference calculations] ...
         current_team_rank_index = -1
         for i, (name_iter, pts_iter) in enumerate(self.sorted_teams_cache):
             if name_iter == current_team_name_fs: current_team_rank_index = i; break
@@ -362,45 +370,29 @@ class ScoreboardApp:
             points_2nd_vs_3rd = self.sorted_teams_cache[1][1] - self.sorted_teams_cache[2][1]; points_3rd_vs_2nd = self.sorted_teams_cache[2][1] - self.sorted_teams_cache[1][1]
         if len(self.sorted_teams_cache) >= 4:
             points_3rd_vs_4th = self.sorted_teams_cache[2][1] - self.sorted_teams_cache[3][1]; points_4th_vs_3rd = self.sorted_teams_cache[3][1] - self.sorted_teams_cache[2][1]
-
-        fs_font_team_name = ("Gill Sans MT", 70, "bold")
-        fs_lbl_name = tk.Label(info_block_frame, text=current_team_name_fs.capitalize(), font=fs_font_team_name, bg=current_team_color, fg="white")
-        fs_lbl_name.pack(pady=(0, 15))
-        fs_font_points = ("Arial", 40)
-        fs_lbl_points = tk.Label(info_block_frame, text=str(current_team_points_fs), font=fs_font_points, bg=current_team_color, fg="yellow")
-        fs_lbl_points.pack(pady=(0, 15))
-        fs_font_rank_number = ("Arial", 50, "bold")
-        fs_font_rank_suffix = ("Arial", 25, "bold")
-        fs_rank_num_text, fs_rank_suffix_text = ScoreboardApp.get_rank_parts_static(current_team_rank_str_fs)
-        fs_rank_holder_frame = tk.Frame(info_block_frame, bg=current_team_color)
-        fs_rank_holder_frame.pack(pady=(0, 15))
-        fs_lbl_rank_num = tk.Label(fs_rank_holder_frame, text=fs_rank_num_text, font=fs_font_rank_number, bg=current_team_color, fg="white")
-        fs_lbl_rank_num.pack(side=tk.LEFT, fill=tk.NONE, expand=False)
-        fs_lbl_rank_suffix = tk.Label(fs_rank_holder_frame, text=fs_rank_suffix_text, font=fs_font_rank_suffix, bg=current_team_color, fg="white")
-        fs_lbl_rank_suffix.pack(side=tk.LEFT, anchor='n', padx=(1,0), fill=tk.NONE, expand=False)
+        fs_font_team_name = ("Gill Sans MT", 70, "bold"); fs_lbl_name = tk.Label(info_block_frame, text=current_team_name_fs.capitalize(), font=fs_font_team_name, bg=current_team_color, fg="white"); fs_lbl_name.pack(pady=(0, 15))
+        fs_font_points = ("Arial", 40); fs_lbl_points = tk.Label(info_block_frame, text=str(current_team_points_fs), font=fs_font_points, bg=current_team_color, fg="yellow"); fs_lbl_points.pack(pady=(0, 15))
+        fs_font_rank_number = ("Arial", 50, "bold"); fs_font_rank_suffix = ("Arial", 25, "bold"); fs_rank_num_text, fs_rank_suffix_text = ScoreboardApp.get_rank_parts_static(current_team_rank_str_fs)
+        fs_rank_holder_frame = tk.Frame(info_block_frame, bg=current_team_color); fs_rank_holder_frame.pack(pady=(0, 15))
+        fs_lbl_rank_num = tk.Label(fs_rank_holder_frame, text=fs_rank_num_text, font=fs_font_rank_number, bg=current_team_color, fg="white"); fs_lbl_rank_num.pack(side=tk.LEFT, fill=tk.NONE, expand=False)
+        fs_lbl_rank_suffix = tk.Label(fs_rank_holder_frame, text=fs_rank_suffix_text, font=fs_font_rank_suffix, bg=current_team_color, fg="white"); fs_lbl_rank_suffix.pack(side=tk.LEFT, anchor='n', padx=(1,0), fill=tk.NONE, expand=False)
         diff_label_fg = "white"; diff_font = ("Arial", 16)
         if points_ahead_of_next is not None: tk.Label(info_block_frame, text=f"{points_ahead_of_next} pts ahead of next", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
         if points_behind_prev is not None: tk.Label(info_block_frame, text=f"{points_behind_prev} pts behind previous", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
-        
         team_emblem_photo_local = None; emblem_label_widget = None
         try:
-            image_filename = os.path.join(IMAGE_BASE_PATH, f"{team_name.lower()}.png") # Use base path
-            if not os.path.exists(image_filename): 
-                 print(f"!!! WARNING: FS - TEAM emblem file not found: {image_filename}")
+            image_filename = os.path.join(IMAGE_BASE_PATH, f"{team_name.lower()}.png")
+            if not os.path.exists(image_filename): print(f"!!! WARNING: FS - TEAM emblem file not found: {image_filename}")
             else:
                 team_emblem_photo_local = tk.PhotoImage(file=image_filename)
                 emblem_label_widget = tk.Label(info_block_frame, image=team_emblem_photo_local, bg=current_team_color)
                 emblem_label_widget.image = team_emblem_photo_local 
                 emblem_label_widget.pack(pady=(20, 0)) 
-        except Exception as e: 
-            print(f"!!! WARNING: FS - ERROR loading TEAM emblem '{image_filename}': {type(e).__name__} - {e} !!!")
-        
-        close_button = tk.Button(info_block_frame, text="Close (or Esc)", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30")
-        close_button.pack(pady=(20,0)) 
+        except Exception as e: print(f"!!! WARNING: FS - ERROR loading TEAM emblem '{image_filename}': {type(e).__name__} - {e} !!!")
+        close_button = tk.Button(info_block_frame, text="Close (or Esc)", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30"); close_button.pack(pady=(20,0)) 
         top_spacer = tk.Frame(content_frame, bg=current_team_color); top_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         info_block_frame.pack(side=tk.TOP) 
         bottom_spacer = tk.Frame(content_frame, bg=current_team_color); bottom_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        
         self.fs_window.bind('<Escape>', lambda e: self.close_fullscreen_quadrant())
         self.fs_window_close_timer = self.root.after(TEMP_FULLSCREEN_DURATION_MS, self.close_fullscreen_quadrant)
         self.fs_window.update_idletasks(); self.fs_window.update()           
@@ -419,7 +411,6 @@ class ScoreboardApp:
         if hasattr(self, 'fs_window_close_timer') and self.fs_window_close_timer is not None:
             self.root.after_cancel(self.fs_window_close_timer)
             self.fs_window_close_timer = None 
-        
         if hasattr(self, 'fs_window') and self.fs_window.winfo_exists():
             try: self.fs_window.grab_release()
             except tk.TclError as e: print(f"WARNING: FS - Info during grab_release: {e}") 
