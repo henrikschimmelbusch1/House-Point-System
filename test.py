@@ -281,7 +281,7 @@ class ScoreboardApp:
         except Exception as e: 
             print(f"!!! WARNING: FS - ERROR loading TEAM emblem '{image_filename}': {type(e).__name__} - {e} !!!")
         
-        close_button = tk.Button(info_block_frame, text="Close (or Esc)", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30")
+        close_button = tk.Button(info_block_frame, text="Close", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30")
         close_button.pack(pady=(20,0)) 
 
         top_spacer = tk.Frame(content_frame, bg=current_team_color)
