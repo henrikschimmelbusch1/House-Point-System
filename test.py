@@ -3,7 +3,7 @@ from tkinter import font
 import socket
 import threading
 import time
-from datetime importdatetime
+from datetime import datetime
 import queue 
 import os 
 
