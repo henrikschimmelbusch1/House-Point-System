@@ -25,7 +25,7 @@ LOGO_FOR_SCREENSAVER_PATH = os.path.join(IMAGE_BASE_PATH, "logo.png") # Path for
 
 # --- Burn-in Prevention Configuration ---
 # BURN_IN_MESSAGE REMOVED
-BURN_IN_SCREEN_DURATION_MS = 2 * 60 * 1000  # 2 minutes
+BURN_IN_SCREEN_DURATION_MS = 20 * 60 * 1000  # 2 minutes
 BURN_IN_LOGO_DX = 3  # Pixels to move logo horizontally each step
 BURN_IN_LOGO_DY = 2  # Pixels to move logo vertically each step
 BURN_IN_ANIMATION_DELAY_MS = 25 # Milliseconds between animation steps (faster for smoother bounce)
@@ -106,7 +106,7 @@ class ScoreboardApp:
     # --- Burn-in Prevention Methods ---
     def check_burn_in_schedule(self):
         now = datetime.now()
-        if now.minute == 20 and not self.burn_in_screen_active: # Trigger at HH:20
+        if now.minute == 35 and not self.burn_in_screen_active: # Trigger at HH:20
             self.activate_burn_in_screen()
         
         ms_until_next_minute = (60 - now.second) * 1000 - now.microsecond // 1000
