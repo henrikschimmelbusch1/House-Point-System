@@ -316,7 +316,7 @@ class ScoreboardApp:
         if rank_position_str == "1st" and self.trophy_icon_image: 
             trophy_label = tk.Label(parent_frame, image=self.trophy_icon_image, bg=current_team_color)
             trophy_label.image = self.trophy_icon_image 
-            trophy_label.place(x=5, y=5) 
+            trophy_label.place(x=15, y=15) 
             trophy_label.bind("<Button-1>", lambda e, tn=team_name, tp=team_points, rps=rank_position_str: self.show_fullscreen_quadrant(tn, tp, rps))
 
         display_team_name = team_name.capitalize()
@@ -377,8 +377,8 @@ class ScoreboardApp:
         fs_lbl_rank_num = tk.Label(fs_rank_holder_frame, text=fs_rank_num_text, font=fs_font_rank_number, bg=current_team_color, fg="white"); fs_lbl_rank_num.pack(side=tk.LEFT, fill=tk.NONE, expand=False)
         fs_lbl_rank_suffix = tk.Label(fs_rank_holder_frame, text=fs_rank_suffix_text, font=fs_font_rank_suffix, bg=current_team_color, fg="white"); fs_lbl_rank_suffix.pack(side=tk.LEFT, anchor='n', padx=(1,0), fill=tk.NONE, expand=False)
         diff_label_fg = "white"; diff_font = ("Arial", 16)
-        if points_ahead_of_next is not None: tk.Label(info_block_frame, text=f"{points_ahead_of_next} pts ahead of next", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
-        if points_behind_prev is not None: tk.Label(info_block_frame, text=f"{points_behind_prev} pts behind previous", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
+        if points_ahead_of_next is not None: tk.Label(info_block_frame, text=f"{points_ahead_of_next} pts ahead of previous", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
+        if points_behind_prev is not None: tk.Label(info_block_frame, text=f"{points_behind_prev} pts behind next", font=diff_font, bg=current_team_color, fg=diff_label_fg).pack(pady=3)
         team_emblem_photo_local = None; emblem_label_widget = None
         try:
             image_filename = os.path.join(IMAGE_BASE_PATH, f"{team_name.lower()}.png")
@@ -389,7 +389,7 @@ class ScoreboardApp:
                 emblem_label_widget.image = team_emblem_photo_local 
                 emblem_label_widget.pack(pady=(20, 0)) 
         except Exception as e: print(f"!!! WARNING: FS - ERROR loading TEAM emblem '{image_filename}': {type(e).__name__} - {e} !!!")
-        close_button = tk.Button(info_block_frame, text="Close (or Esc)", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30"); close_button.pack(pady=(20,0)) 
+        close_button = tk.Button(info_block_frame, text="Close", font=("Arial", 16), command=self.close_fullscreen_quadrant, bg="gray10", fg="white", activebackground="gray30"); close_button.pack(pady=(20,0)) 
         top_spacer = tk.Frame(content_frame, bg=current_team_color); top_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         info_block_frame.pack(side=tk.TOP) 
         bottom_spacer = tk.Frame(content_frame, bg=current_team_color); bottom_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
